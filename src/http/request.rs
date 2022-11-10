@@ -5,15 +5,16 @@ use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::str;
 use std::str::Utf8Error;
 
-pub struct Request {
-    path: String,
-    query_string: Option<String>,
+pub struct Request<'buf> {
+    path: &'buf str,
+    query_string: Option<&'buf str>,
     method: Method,
 }
 
-impl TryFrom<&[u8]> for Request {
+// GET /search?name=abc&sort=1 HTTP/1.1\r\n...HEADERS...
+impl<'buf> TryFrom<&'buf [u8]> for Request<'buf> {
     type Error = ParseError;
-    fn try_from(buf: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(buf: &'buf [u8]) -> Result<Self, Self::Error> {
         // match str::from_utf8(buf) {
         //     Ok(request) => {}
         //     Err(e) => return Err(ParseError::InvalidEncoding),
@@ -36,7 +37,7 @@ impl TryFrom<&[u8]> for Request {
         // With value in Some(value) being wrapped by Ok(value)
         // And error being wrapped by Err(Error)
         let (method, request) = get_next_word(request).ok_or(ParseError::InvalidRequest)?;
-        let (path, request) = get_next_word(request).ok_or(ParseError::InvalidRequest)?;
+        let (mut path, request) = get_next_word(request).ok_or(ParseError::InvalidRequest)?;
         let (protocol, _) = get_next_word(request).ok_or(ParseError::InvalidRequest)?;
 
         if protocol != "HTTP/1.1" {
@@ -44,7 +45,35 @@ impl TryFrom<&[u8]> for Request {
         }
 
         let method: Method = method.parse()?;
-        unimplemented!()
+
+        let mut query_string = None;
+        // Implementation 1
+        // match path.find('?') {
+        //     Some(i) => {
+        //         query_string = Some(&path[i + 1..]);
+        //         path = &path[..i]
+        //     }
+        //     None => {}
+        // }
+        // // Implementation 2
+        // let q = path.find('?');
+        // if q.is_some() {
+        //     let i = q.unwrap();
+        //     query_string = Some(&path[i + 1..]);
+        //     path = &path[..i]
+        // }
+        // Implementation 3
+
+        if let Some(i) = path.find('?') {
+            query_string = Some(&path[i + 1..]);
+            path = &path[..i]
+        }
+
+        Ok(Self {
+            path,
+            query_string,
+            method,
+        })
     }
 }
 
